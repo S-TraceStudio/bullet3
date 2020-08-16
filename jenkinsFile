@@ -1,0 +1,271 @@
+disableConcurrentBuilds()
+
+stage('Checkout') 
+{
+    node('master') 
+    {
+        withEnv(overrides: []) 
+        {
+            dir('') 
+            {
+                try
+                {
+                    if (fileExists('.git/config')) 
+                    {
+                        sh 'git clean -ffdx' // removes all the files not from git or untracked, or ignored
+                        sh 'git reset --hard' // reverts everything tracked by git to its original state
+                    }
+
+                    checkout scm
+                    sh 'git submodule update --init --recursive --progress'
+
+                    // get git commit ID
+                    env.GIT_COMMIT_VERSION = gitCommitVersion()
+                    echo "git commit version: ${env.GIT_COMMIT_VERSION}"
+
+                    // Send notifications CHECKOUT SUCCESS
+                    fallback = "Checkout : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Checkout"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+
+                    notifyBuildOnSlack("STARTING BUILD",fallback,buildNumber,gitBranch,gitCommit,"#0000FF")
+
+                    stash 'source'
+                }
+                catch (ignored)
+                {
+                    // Send notifications CHECKOUT FAIL
+                    fallback = "Checkout : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Checkout"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("CHECKOUT FAILURE",fallback,buildNumber,gitBranch,gitCommit,"#FF0000")
+
+                    error 'Checkout Failed'
+                }
+            }
+        }
+    }
+}
+
+def buildTasks = [:]
+buildTasks['x64_Build'] = 
+{
+    stage('x64_Build') 
+    {
+        node('windows-builder') 
+        {
+            withEnv(overrides: ['MSBUILD_PATH=C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\MSBuild\\15.0\\Bin\\MSBuild.exe', 'W32_CONFIG=Release']) 
+            {
+                try 
+                {
+                    echo "Executing Slave Windows"
+                    echo "Slave name : ${env.NODE_NAME}"
+
+                    cleanWs()
+                    unstash 'source'
+
+                    dir("scripts") 
+                    {
+                        // build Sentry
+                        bat "buildBullet3.bat"
+
+                        // create Install folder
+                        bat "installBullet3.bat"
+
+                        // compress and upoad to S3
+                        bat "compressAndUploadBullet3.bat"
+                    }
+
+                    // Send x64 notifications WINDOWS BUILD SUCCESS
+                    fallback = "Windows Build : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Windows Build"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+
+                    notifyBuildOnSlack("WINDOWS BUILD SUCCESS",fallback,buildNumber,gitBranch,gitCommit,"#00FF00")
+                }
+                catch (ignored) 
+                {
+                    // Send x64 failure notifications WINDOWS BUILD FAILURE
+                    fallback = "Windows Build : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Windows Build"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("WINDOWS BUILD FAILURE",fallback,buildNumber,gitBranch,gitCommit,"#FF0000")
+
+                    error 'Windows Build Failed'
+                }
+            }
+        }
+    }
+}
+buildTasks['OSX_Build'] = 
+{
+    stage('OSX_Build') 
+    {
+        node('osx')
+        {
+            withEnv(overrides: []) 
+            {
+                try 
+                {
+                    echo "Executing Slave OSX"
+                    echo "Slave name : ${env.NODE_NAME}"
+
+                    // get source
+                    unstash 'source'
+
+                    dir("scripts") 
+                    {
+                        // Build 
+                        //sh """#!/usr/bin/env bash
+                        //./buildLibPNG.sh
+                        //"""
+
+                        // Install 
+                        //sh """#!/usr/bin/env bash
+                        //./installLibPNG.sh
+                        //"""
+
+                        // Compress and upload 
+                        //sh """#!/usr/bin/env bash
+                        //./compressAndUploadLibPNG.sh
+                        //"""
+                    }
+
+                    // Send OSX notifications OSX BUILD SUCCESS
+                    fallback = "OSX Build : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - OSX Build"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+
+                    notifyBuildOnSlack("OSX BUILD SUCCESS",fallback,buildNumber,gitBranch,gitCommit,"#00FF00")
+
+                }
+                catch (ignored)
+                {
+                    // Send OSX failure notifications OSX BUILD FAILURE
+                    fallback = "OSX Build : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - OSX Build"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("OSX BUILD FAILURE",fallback,buildNumber,gitBranch,gitCommit,"#FF0000")
+
+                    error 'OSX Build Failed'
+                }
+            }
+        }
+    }
+}
+parallel buildTasks
+
+def testTasks = [:]
+testTasks['x64_Test'] = 
+{
+    stage('x64_Test') 
+    {
+        node('windows-builder')
+        {
+            withEnv(overrides: []) 
+            {
+                try 
+                {
+                    echo "Executing Slave Windows"
+                    echo "Slave name : ${env.NODE_NAME}"
+
+                    dir("scripts") 
+                    {
+                        // run tests
+                        //bat "runTest.bat"
+                    }
+
+                    // Send x64 notifications WINDOWS TEST SUCCESS
+                    fallback = "Windows Test : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Windows Test"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("WINDOWS TEST SUCCESS",fallback,buildNumber,gitBranch,gitCommit,"#00FF00")
+                }
+                catch (ignored) 
+                {
+                    // Send x64 failure notifications WINDOWS TEST FAILURE
+                    fallback = "Windows Test : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Windows Test"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("WINDOWS TEST FAILURE",fallback,buildNumber,gitBranch,gitCommit,"#FF0000")
+
+                    error 'Windows Test Failed'
+                }
+            }
+        }
+    }
+}
+testTasks['OSX_Test'] = 
+{
+    stage('OSX_Test') 
+    {
+        node('osx')
+        {
+            withEnv(overrides: []) 
+            {
+                try 
+                {
+                    echo "Executing Slave OSX"
+                    echo "Slave name : ${env.NODE_NAME}"
+
+                    dir("scripts") 
+                    {
+                        // Test 
+                        //sh """#!/usr/bin/env bash
+                        //./runTest.sh
+                        //"""
+                    }
+
+                    // Send OSX notifications OSX BUILD SUCCESS
+                    fallback = "OSX Test : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - OSX Test"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("OSX TEST SUCCESS",fallback,buildNumber,gitBranch,gitCommit,"#00FF00")
+                }
+                catch (ignored)
+                {
+                    // Send OSX failure notifications OSX BUILD FAILURE
+                    fallback = "OSX Test : ${env.GIT_COMMIT_VERSION} "
+                    buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - OSX Test"
+                    gitBranch = "${env.BRANCH_NAME}"
+                    gitCommit = "${env.GIT_COMMIT_VERSION}"
+                    notifyBuildOnSlack("OSX TEST FAILURE",fallback,buildNumber,gitBranch,gitCommit,"#FF0000")
+
+                    error 'OSX Test Failed'
+                }
+            }
+        }
+    }
+}
+parallel testTasks
+
+stage('BuildFinished') 
+{
+    node('master') 
+    {
+        withEnv(overrides: []) 
+        {
+            // get git commit ID
+            env.GIT_COMMIT_VERSION = gitCommitVersion()
+
+            // Send notifications BUILD FINISHED
+            fallback = "Build Finished : ${env.GIT_COMMIT_VERSION} "
+            buildNumber = "Build <${env.BUILD_URL}| #${env.BUILD_NUMBER}> - Build Succeeded"
+            gitBranch = "${env.BRANCH_NAME}"
+            gitCommit = "${env.GIT_COMMIT_VERSION}"
+
+            notifyBuildOnSlack("BUILD FINISHED",fallback,buildNumber,gitBranch,gitCommit,"#0000FF")
+
+            echo "finished"
+        }
+    }
+}
