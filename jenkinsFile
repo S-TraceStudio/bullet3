@@ -125,14 +125,14 @@ buildTasks['OSX_Build'] =
                         """
 
                         // Install 
-                        //sh """#!/usr/bin/env bash
-                        //./installLibPNG.sh
-                        //"""
+                        sh """#!/usr/bin/env bash
+                        ./installBullet3.sh
+                        """
 
                         // Compress and upload 
-                        //sh """#!/usr/bin/env bash
-                        //./compressAndUploadLibPNG.sh
-                        //"""
+                        sh """#!/usr/bin/env bash
+                        ./compressAndUploadBullet3.sh
+                        """
                     }
 
                     // Send OSX notifications OSX BUILD SUCCESS
