@@ -120,9 +120,9 @@ buildTasks['OSX_Build'] =
                     dir("scripts") 
                     {
                         // Build 
-                        //sh """#!/usr/bin/env bash
-                        //./buildLibPNG.sh
-                        //"""
+                        sh """#!/usr/bin/env bash
+                        ./buildBullet3.sh
+                        """
 
                         // Install 
                         //sh """#!/usr/bin/env bash
